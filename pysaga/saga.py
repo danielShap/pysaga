@@ -1,21 +1,6 @@
 from typing import List, Callable, Type, Optional, Dict
 
-from pysaga.actionstep import ActionStep, LambdaActionStep
-
-
-class SagaError(Exception):
-    """
-    Saga Error is the Exception type raised when an error occurred in one of the Saga's ActionSteps.
-    The SagaError contains the exception raised in the ActionStep and any raised exceptions in the compensations.
-    """
-    def __init__(self, action_exception: Exception, *args, **kwargs):
-        """
-        :param action_exception: The exception raised in the action itself.
-        :param args: Additional args passed.
-        :param kwargs: Additional kwargs passed.
-        """
-        super().__init__(args, kwargs)
-        self.action_exception = action_exception
+from pysaga.actionstep import ActionStep, LambdaActionStep, ActionError
 
 
 class SagaCompensationError(Exception):
@@ -43,18 +28,18 @@ class SagaResult:
     will be stored in compensation_success and in case of error in saga_compensation_error.
     """
     def __init__(self):
-        self.success: Optional[bool] = None
+        self.success: Optional[bool] = True
         self.compensations_success: bool = True
-        self.message: Optional[str] = None
         self.result_args: Dict = {}
-        self.saga_error: Optional[SagaError] = None
+        self.action_error: Optional[ActionError] = None
         self.saga_compensation_error: Optional[SagaCompensationError] = None
 
     def __str__(self):
-        msg = f"Saga Success Result: {self.success}\n" \
-              f"Message: {self.message}"
-        msg = f"{msg}\n Saga Exception Message: {self.saga_error.action_exception}" \
-            if self.success is False else msg
+        msg = f"Saga Success Result: {self.success}"
+        msg = f"{msg}\nSaga Exception Message: {str(self.action_error)}" \
+            if not self.success  else msg
+        msg = f"{msg}\nAdditional Compensations Errors : {str(self.saga_compensation_error)}" \
+            if not self.compensations_success else msg
         return msg
 
 
@@ -85,9 +70,9 @@ class Saga:
             actions_done.append(action)
             try:
                 saga_action_args = action.act(**saga_action_args) or {}
-            except SagaError as e:
+            except ActionError as e:
                 saga_result.success = False
-                saga_result.saga_error = e
+                saga_result.action_error = e
                 return self.__run_compensation(actions_done, saga_result)
 
             saga_result.result_args.update(saga_action_args)
@@ -95,7 +80,8 @@ class Saga:
         saga_result.success = True
         return saga_result
 
-    def __run_compensation(self, action_steps: List[ActionStep],
+    @staticmethod
+    def __run_compensation(action_steps: List[ActionStep],
                            saga_result: SagaResult) -> SagaResult:
         """
         Execute the compensations of the ActionSteps.
@@ -165,6 +151,7 @@ class SagaBuilder:
         self.__action_steps.append(action)
         return self
 
+    # TODO: action state is saved between executions, this should be avoided.
     def action(self, action_type= Type[ActionStep],
                **action_kwargs) -> "SagaBuilder":
         """

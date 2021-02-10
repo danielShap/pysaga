@@ -2,6 +2,29 @@ from abc import ABC, abstractmethod
 from typing import Callable, Dict
 
 
+class ActionError(Exception):
+    """
+    ActionError is the Exception type raised when an error occurs in one of the Saga's ActionSteps.
+    The ActionError contains the exception raised in the ActionStep.
+    """
+    def __init__(self, action_name: str,
+                 action_exception: Exception,
+                 *args, **kwargs):
+        """
+        :param action_name: Name of the failed action.
+        :param action_exception: The exception raised in the action itself.
+        :param args: Additional args passed.
+        :param kwargs: Additional kwargs passed.
+        """
+        super().__init__(args, kwargs)
+        self.action_name = action_name
+        self.action_exception = action_exception
+
+    def __str__(self):
+        return f"Am error occurred during the execution of action {self.action_name}," \
+               f" error: {str(self.action_exception)}"
+
+
 class ActionStep(ABC):
     """
     The ActionStep is the class that represents a step in the Saga.
@@ -40,7 +63,13 @@ class ActionStep(ABC):
         :return: Result arguments dict.
         """
         self._action_step_kwargs.update(action_kwargs)
-        return self._action(**self._action_step_kwargs)
+        try:
+            result = self._action(**self._action_step_kwargs)
+        except Exception as e:
+            raise ActionError(action_name=self.__class__.__name__,
+                              action_exception=e)
+
+        return result
 
     def compensate(self) -> bool:
         """
